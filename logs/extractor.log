@@ -6850,3 +6850,29 @@ Call log:
 2026-04-01 14:05:05,045 | INFO | extractor_logger | URL válida y dominio permitido.
 2026-04-01 14:05:05,046 | INFO | extractor_logger | Proveedor detectado: Amazon
 2026-04-01 14:05:05,046 | INFO | extractor_logger | Iniciando extracción Amazon
+2026-04-08 10:54:42,305 | INFO | extractor_logger | URL válida y dominio permitido.
+2026-04-08 10:54:42,307 | INFO | extractor_logger | Proveedor detectado: Amazon
+2026-04-08 10:54:42,307 | INFO | extractor_logger | Iniciando extracción Amazon
+2026-04-08 10:54:48,133 | INFO | extractor_logger | Intento 1 → Status: 200
+2026-04-08 10:54:48,591 | INFO | extractor_logger | Estrategia render exitosa
+2026-04-08 10:54:48,596 | INFO | extractor_logger | Pipeline limpio completado correctamente.
+2026-04-08 12:24:01,882 | INFO | extractor_logger | URL válida y dominio permitido.
+2026-04-08 12:24:01,883 | INFO | extractor_logger | Proveedor detectado: Amazon
+2026-04-08 12:24:01,883 | INFO | extractor_logger | Iniciando extracción Amazon
+2026-04-08 12:24:07,176 | INFO | extractor_logger | Intento 1 → Status: 200
+2026-04-08 12:24:07,559 | INFO | extractor_logger | Precio detectado (offscreen): 162.5
+2026-04-08 12:24:07,615 | INFO | extractor_logger | Estrategia render exitosa
+2026-04-08 12:24:07,619 | INFO | extractor_logger | Pipeline limpio completado correctamente.
+2026-04-08 14:22:13,421 | INFO | extractor_logger | URL válida y dominio permitido.
+2026-04-08 14:22:13,422 | INFO | extractor_logger | Proveedor detectado: Amazon
+2026-04-08 14:22:13,422 | INFO | extractor_logger | Iniciando extracción Amazon
+2026-04-08 14:22:20,564 | INFO | extractor_logger | Intento 1 → Status: 200
+2026-04-08 14:22:20,935 | INFO | extractor_logger | Precio detectado (offscreen): 162.5
+2026-04-08 14:22:21,002 | INFO | extractor_logger | Estrategia render exitosa
+2026-04-08 14:28:26,455 | INFO | extractor_logger | URL válida y dominio permitido.
+2026-04-08 14:28:26,456 | INFO | extractor_logger | Proveedor detectado: Amazon
+2026-04-08 14:28:26,457 | INFO | extractor_logger | Iniciando extracción Amazon
+2026-04-08 14:28:31,591 | INFO | extractor_logger | Intento 1 → Status: 200
+2026-04-08 14:28:32,106 | INFO | extractor_logger | Precio detectado (offscreen): 162.5
+2026-04-08 14:28:32,184 | INFO | extractor_logger | Estrategia render exitosa
+2026-04-08 14:28:32,188 | INFO | extractor_logger | Pipeline limpio completado correctamente.

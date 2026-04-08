@@ -54,13 +54,14 @@ def run_pipeline(url: str) -> dict:
 
     raw_data = extract_product(url)
     raw_data["fecha_extraccion"] = datetime.now(timezone.utc)
+    
 
     # ------------------------------------------------------
     #LIMPIEZA LIGERA (SIN ESTRUCTURA)
     # ------------------------------------------------------
 
     cleaned_data = clean_raw_product(raw_data)
-
+    
     # ------------------------------------------------------
     # METADATA BÁSICA
     # ------------------------------------------------------

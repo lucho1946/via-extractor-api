@@ -16,7 +16,6 @@ from core.logger_config import logger
 # CONFIGURACIÓN
 # ==========================================================
 
-# 🔥 CORRECCIÓN CLAVE
 SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY")
 
 SCRAPER_URL = "http://api.scraperapi.com"
@@ -71,7 +70,6 @@ def is_valid_data(data):
 
 def fetch_with_scraperapi(url, render=True):
 
-    # 🔥 VALIDACIÓN SEGURA
     if not SCRAPER_API_KEY:
         raise RuntimeError("SCRAPER_API_KEY no configurada")
 
@@ -118,7 +116,15 @@ def parse_amazon_html(html, url):
 
     soup = BeautifulSoup(html, "html.parser")
 
+    # ------------------------------------------------------
+    # TÍTULO
+    # ------------------------------------------------------
+
     title = get_text_safe(soup, "#productTitle")
+
+    # ------------------------------------------------------
+    # MARCA
+    # ------------------------------------------------------
 
     brand = get_text_safe(soup, "#bylineInfo")
 
@@ -126,22 +132,69 @@ def parse_amazon_html(html, url):
         brand = brand.replace("Marca:", "").replace("Visit the", "")
         brand = brand.replace("Store", "").strip()
 
-    price_whole = get_text_safe(soup, ".a-price-whole")
-    price_fraction = get_text_safe(soup, ".a-price-fraction")
+    # ======================================================
+    # PRECIO ROBUSTO (FIX CRÍTICO)
+    # ======================================================
 
     price_value = None
     currency = None
 
-    if price_whole:
-        try:
-            price_str = price_whole.replace(",", "")
-            if price_fraction:
-                price_str += "." + price_fraction
+    # 1. Intento con a-offscreen
+    price_offscreen = get_text_safe(soup, ".a-price .a-offscreen")
 
-            price_value = float(price_str)
-            currency = "USD"
-        except:
-            pass
+    if price_offscreen and len(price_offscreen.strip()) > 0:
+        try:
+            price_clean = re.sub(r"[^\d\.]", "", price_offscreen)
+
+            if price_clean:
+                price_value = float(price_clean)
+                currency = "USD"
+                logger.info(f"Precio detectado (offscreen): {price_value}")
+
+        except Exception as e:
+            logger.warning(f"Error precio offscreen: {e}")
+
+    # 2. Método principal (whole + fraction)
+    if not price_value:
+
+        price_whole = get_text_safe(soup, ".a-price-whole")
+        price_fraction = get_text_safe(soup, ".a-price-fraction")
+
+        if price_whole:
+            try:
+                whole_clean = re.sub(r"[^\d]", "", price_whole)
+
+                if price_fraction:
+                    fraction_clean = re.sub(r"[^\d]", "", price_fraction)
+                    price_str = f"{whole_clean}.{fraction_clean}"
+                else:
+                    price_str = whole_clean
+
+                price_value = float(price_str)
+                currency = "USD"
+
+                logger.info(f"Precio detectado (whole+fraction): {price_value}")
+
+            except Exception as e:
+                logger.warning(f"Error precio por partes: {e}")
+
+    # 3. Fallback regex
+    if not price_value:
+
+        match = re.search(r"\$[\s]*([0-9]+(?:\.[0-9]{1,2})?)", html)
+
+        if match:
+            try:
+                price_value = float(match.group(1))
+                currency = "USD"
+                logger.info(f"Precio detectado (regex): {price_value}")
+
+            except Exception as e:
+                logger.warning(f"Error regex precio: {e}")
+
+    # ------------------------------------------------------
+    # BULLETS
+    # ------------------------------------------------------
 
     bullets = []
 
@@ -151,6 +204,10 @@ def parse_amazon_html(html, url):
         text = el.get_text(strip=True)
         if text and len(text) > 10:
             bullets.append(text)
+
+    # ------------------------------------------------------
+    # DETALLES TÉCNICOS
+    # ------------------------------------------------------
 
     technical_details = {}
 
@@ -167,6 +224,10 @@ def parse_amazon_html(html, url):
             if key and value:
                 technical_details[key] = value
 
+    # ------------------------------------------------------
+    # REFERENCIA
+    # ------------------------------------------------------
+
     referencia = None
 
     for key, value in technical_details.items():
@@ -182,6 +243,10 @@ def parse_amazon_html(html, url):
 
     if not title:
         return None
+
+    # ------------------------------------------------------
+    # RESULTADO FINAL
+    # ------------------------------------------------------
 
     return {
         "title_raw": title,

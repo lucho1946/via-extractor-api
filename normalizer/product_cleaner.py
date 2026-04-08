@@ -299,7 +299,7 @@ def filter_irrelevant_specs(technical_details):
 def extract_specs_from_text(text):
 
     specs = {}
-
+ 
     patterns = {
 
         "Potencia": r"\b\d+\s?W\b",
@@ -343,7 +343,22 @@ def clean_raw_product(raw_data: dict):
 
     # LIMPIEZA BASICA
     marca = clean_brand(brand_raw)
-    costo, moneda = parse_price(price_text)
+    
+    # ======================================================
+    # FIX PRECIO (COMPATIBLE CON NUEVO EXTRACTOR)
+    # ======================================================
+
+    price_value = raw_data.get("price_value")
+    currency_raw = raw_data.get("currency")
+
+    # 1. PRIORIDAD: usar precio ya procesado por el extractor
+    if price_value:
+        costo = price_value
+        moneda = currency_raw or "USD"
+
+    # 2. FALLBACK: usar lógica antigua (parse_price)
+    else:
+        costo, moneda = parse_price(price_text)
 
     title_raw = clean_text(title_raw)
     product_description = clean_text(product_description)
