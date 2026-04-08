@@ -1,28 +1,24 @@
-
 # ==========================================================
-# API - VIA EXTRACTOR (VERSIÓN PRODUCCIÓN + FRONTEND READY)
+# API - VIA EXTRACTOR (VERSIÓN CORREGIDA Y ESTABLE)
 # ==========================================================
 
 import os
 import time
-
-# ==========================================================
-# CARGA SEGURA DE VARIABLES DE ENTORNO
-# ==========================================================
-# Se fuerza la ruta del .env para evitar problemas de ejecución
-# con uvicorn u otros contextos
-
 from dotenv import load_dotenv
+
+# ==========================================================
+# CARGA DE VARIABLES DE ENTORNO
+# ==========================================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
 
 load_dotenv(dotenv_path=ENV_PATH)
 
-# DEBUG (puedes quitarlo luego)
-print("ENV SCRAPER (RENDER):", os.getenv("SCRAPER_API_KEY"))
+print("ENV SCRAPER:", os.getenv("SCRAPER_API_KEY"))
+
 # ==========================================================
-# IMPORTS PRINCIPALES
+# IMPORTS
 # ==========================================================
 
 from fastapi import FastAPI, HTTPException, Header, Body
@@ -31,22 +27,21 @@ from typing import Optional, Dict, Any
 
 from main import run_pipeline
 from services.ai_enricher import enrich_product
-
+from presentation.via_mapper import map_to_via_fields  # 🔥 NUEVO
 
 # ==========================================================
-# CONFIGURACIÓN GENERAL
+# CONFIG
 # ==========================================================
 
 app = FastAPI(
     title="VIA Extractor API",
-    version="4.1.1"
+    version="4.2.0"
 )
 
 VIA_API_KEY = os.getenv("VIA_API_KEY")
 
-
 # ==========================================================
-# CONFIGURACIÓN CORS
+# CORS
 # ==========================================================
 
 app.add_middleware(
@@ -57,22 +52,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # ==========================================================
 # VALIDACIÓN API KEY
 # ==========================================================
 
 def validate_api_key(x_api_key: Optional[str]):
-    """
-    Valida acceso a endpoint protegido
-    """
     if VIA_API_KEY:
         if x_api_key != VIA_API_KEY:
-            raise HTTPException(
-                status_code=401,
-                detail="API key inválida"
-            )
-
+            raise HTTPException(status_code=401, detail="API key inválida")
 
 # ==========================================================
 # ENDPOINT PROTEGIDO
@@ -86,29 +73,21 @@ def extract_product_secure(
     validate_api_key(x_api_key)
     return process_extraction(url)
 
-
 # ==========================================================
-# ENDPOINT FRONTEND
+# ENDPOINT PRINCIPAL (FRONTEND)
 # ==========================================================
 
 @app.post("/extract-json")
 def extract_product_json(
     body: Dict[str, Any] = Body(...)
 ):
-    """
-    Endpoint principal usado por frontend (Tampermonkey / VIA)
-    """
 
     url = body.get("url")
 
     if not url or not isinstance(url, str):
-        raise HTTPException(
-            status_code=400,
-            detail="URL válida requerida"
-        )
+        raise HTTPException(status_code=400, detail="URL válida requerida")
 
     return process_extraction(url)
-
 
 # ==========================================================
 # LÓGICA CENTRAL
@@ -128,38 +107,40 @@ def process_extraction(url: str):
         # --------------------------------------------------
         result = run_pipeline(url)
 
-        metadata = result.get("metadata", {})
-
-        if metadata.get("estado_extraccion") == "failed":
-            raise HTTPException(
-                status_code=500,
-                detail="Error en extracción del producto"
-            )
-
-        print("✅ Extracción completada")
-
-        # --------------------------------------------------
-        # VALIDACIÓN INTELIGENTE
-        # --------------------------------------------------
         if not result or not result.get("title_raw"):
             return {
                 "success": False,
                 "error": "No se pudo extraer el producto. Amazon pudo haber bloqueado la solicitud."
             }
 
-        # --------------------------------------------------
-        # 2. ENRIQUECIMIENTO CON IA
-        # --------------------------------------------------
-        print("Ejecutando enriquecimiento con IA...")
+        print("Extracción completada")
 
-        ai_result = enrich_product(result)
+        # --------------------------------------------------
+        # 2. ENRIQUECIMIENTO IA
+        # --------------------------------------------------
+        print("Ejecutando IA...")
+
+        enriched = enrich_product(result)
 
         print("IA completada")
+        print("AI_KEYS:", enriched.keys())
 
         # --------------------------------------------------
-        # 3. METADATA FINAL
+        # 3. MAPPER VIA (🔥 FIX CRÍTICO)
         # --------------------------------------------------
-        metadata = ai_result.get("metadata", {})
+        print("Generando VIA fields...")
+
+        via_fields = map_to_via_fields(enriched)
+
+        print("VIA_FIELDS:", via_fields)
+
+        if not via_fields or not via_fields.get("21"):
+            raise Exception("Error: VIA fields vacío o inválido")
+
+        # --------------------------------------------------
+        # 4. METADATA FINAL
+        # --------------------------------------------------
+        metadata = enriched.get("metadata", {})
 
         metadata["tiempo_total_api_ms"] = int(
             (time.time() - start_time) * 1000
@@ -170,7 +151,7 @@ def process_extraction(url: str):
 
         return {
             "success": True,
-            "via_fields": ai_result.get("via_fields"),
+            "via_fields": via_fields,
             "metadata": metadata
         }
 
@@ -184,9 +165,8 @@ def process_extraction(url: str):
             detail=str(e)
         )
 
-
 # ==========================================================
-# ENDPOINT TEST IA
+# TEST IA
 # ==========================================================
 
 @app.get("/test-ai")
