@@ -1,328 +1,184 @@
+# ==========================================================
+# AI ENRICHER v2 — OPTIMIZADO Y ESTABLE
+# ==========================================================
+
 import os
 import json
 import re
 from openai import OpenAI
+from pydantic import BaseModel
 
 from normalizer.spec_postprocessor import process_description
 
 
 # ==========================================================
-# FORMATEAR DETALLES TECNICOS
+# SCHEMA CONTROLADO
 # ==========================================================
 
-def format_technical_details(details: dict):
-    if not details:
-        return ""
-
-    return "\n".join([f"{k}: {v}" for k, v in details.items()])
-
-
-# ==========================================================
-# DETECTAR PATRONES TECNICOS
-# ==========================================================
-
-def detect_technical_patterns(text: str):
-
-    patterns = {
-        "Voltaje": r"\b\d+\s?V\b",
-        "Potencia": r"\b\d+\s?W\b",
-        "Corriente": r"\b\d+\s?A\b",
-        "Frecuencia": r"\b\d+\s?Hz\b",
-        "Dimensión": r"\b\d+\s?mm\b",
-        "Peso": r"\b\d+(\.\d+)?\s?(kg|lb)\b",
-        "Temperatura": r"\b\d+\s?°C\b",
-        "Capacidad": r"\b\d+\s?(L|litros|GB)\b"
-    }
-
-    specs = []
-
-    for field, pattern in patterns.items():
-        matches = re.findall(pattern, text)
-        for m in matches:
-            val = m if isinstance(m, str) else m[0]
-            specs.append(f"{field}: {val}")
-
-    return list(set(specs))
+class FichaTecnica(BaseModel):
+    nombre: str
+    descripcion_general: str
+    caracteristicas_tecnicas: list[str] = []
+    ventajas: list[str] = []
+    aplicaciones: list[str] = []
 
 
 # ==========================================================
-# LIMPIAR RESPUESTA IA
+# PROMPT MEJORADO
 # ==========================================================
 
-def clean_ai_output(text):
+SYSTEM_PROMPT = """
+Eres un ingeniero de producto experto en fichas técnicas industriales.
 
-    text = text.strip()
+REGLAS:
+- Responde SOLO JSON válido
+- NO inventes datos
+- NO repitas información
+- NO incluyas marca ni referencia en el nombre
+- Usa lenguaje técnico claro
+- Máximo 6 elementos por lista
 
-    if text.startswith("```"):
-        text = text.replace("```json", "").replace("```", "")
-
-    return text.strip()
-
-
-# ==========================================================
-# NORMALIZAR UNIDADES
-# ==========================================================
-
-def normalize_units(text):
-
-    replacements = {
-        "milliamp_hours": "mAh",
-        "milliamp hour": "mAh",
-        "milliamp-hours": "mAh",
-        "pounds": "lb",
-        "pound": "lb",
-        "inches": "in",
-        "inch": "in"
-    }
-
-    for k, v in replacements.items():
-        text = text.replace(k, v)
-
-    return text
-
-
-# ==========================================================
-# PARSER ROBUSTO JSON
-# ==========================================================
-
-def safe_parse_json(content: str):
-
-    try:
-        return json.loads(content)
-    except:
-        pass
-
-    json_match = re.search(r'\{.*\}', content, re.DOTALL)
-
-    if json_match:
-        try:
-            return json.loads(json_match.group())
-        except:
-            pass
-
-    return None
-
-
-# ==========================================================
-# NUEVO: CONSTRUCTOR DE DESCRIPCIÓN LIMPIA
-# ==========================================================
-
-def build_description(structured):
-
-    def format_list(items):
-        return "\n".join([f"• {i}" for i in items if i])
-
-    return f"""
-DESCRIPCIÓN GENERAL
-{structured.get("descripcion_general", "")}
-
-VENTAJAS PRINCIPALES
-{format_list(structured.get("ventajas", []))}
-
-APLICACIONES
-{format_list(structured.get("aplicaciones", []))}
-
-CARACTERÍSTICAS TÉCNICAS
-{format_list(structured.get("tecnica", []))}
-""".strip()
-
-
-# ==========================================================
-# PROMPT ACTUALIZADO (JSON ESTRUCTURADO)
-# ==========================================================
-
-def build_prompt(
-    title_raw,
-    marca,
-    bullets_text,
-    description_text,
-    tech_text,
-    product_info_text,
-    aplus_text,
-    detected_specs_text
-):
-
-    return f"""
-Actúa como un ingeniero de producto experto en redacción de fichas técnicas industriales.
-
-REGLAS IMPORTANTES
-- No inventar especificaciones
-- No modificar unidades
-- No repetir datos técnicos
-- No incluir marca en el nombre
-- No incluir referencia en el nombre
-- RESPONDER ÚNICAMENTE JSON válido
-- NO incluir texto fuera del JSON
-
-DATOS DEL PRODUCTO
-
-TITULO ORIGINAL:
-{title_raw}
-
-MARCA:
-{marca}
-
-CARACTERISTICAS:
-{bullets_text}
-
-DESCRIPCION:
-{description_text}
-
-TABLA TECNICA:
-{tech_text}
-
-INFORMACION:
-{product_info_text}
-
-A+ CONTENT:
-{aplus_text}
-
-ESPECIFICACIONES DETECTADAS:
-{detected_specs_text}
-
-RESPUESTA (JSON EXACTO):
-
-{{
- "nombre": "string",
- "descripcion_general": "string",
- "ventajas": ["string"],
- "aplicaciones": ["string"],
- "tecnica": ["string"]
-}}
+Formato obligatorio:
+{
+  "nombre": "",
+  "descripcion_general": "",
+  "caracteristicas_tecnicas": [],
+  "ventajas": [],
+  "aplicaciones": []
+}
 """
 
 
 # ==========================================================
-# FUNCION PRINCIPAL
+# UTILIDADES
+# ==========================================================
+
+def safe_parse_json(text: str):
+    try:
+        return json.loads(text)
+    except:
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except:
+                pass
+    return None
+
+
+def clean_list(items):
+    return [str(i).strip() for i in items if i and len(str(i).strip()) > 3]
+
+
+def build_description(ficha: FichaTecnica):
+
+    def format_list(items):
+        return "\n".join([f"• {i}" for i in items if i])
+
+    sections = []
+
+    if ficha.descripcion_general:
+        sections.append(f"""DESCRIPCIÓN GENERAL
+{ficha.descripcion_general}""")
+
+    if ficha.caracteristicas_tecnicas:
+        sections.append(f"""CARACTERÍSTICAS TÉCNICAS
+{format_list(ficha.caracteristicas_tecnicas)}""")
+
+    if ficha.ventajas:
+        sections.append(f"""VENTAJAS PRINCIPALES
+{format_list(ficha.ventajas)}""")
+
+    if ficha.aplicaciones:
+        sections.append(f"""APLICACIONES
+{format_list(ficha.aplicaciones)}""")
+
+    return "\n\n".join(sections).strip()
+
+
+def build_fallback(cleaned_data: dict) -> FichaTecnica:
+
+    title = cleaned_data.get("title_raw") or "Producto"
+    bullets = cleaned_data.get("bullets") or []
+    tech = cleaned_data.get("technical_details") or {}
+
+    return FichaTecnica(
+        nombre=title[:100],
+        descripcion_general=bullets[0] if bullets else title,
+        caracteristicas_tecnicas=[f"{k}: {v}" for k, v in tech.items()],
+        ventajas=bullets[:5],
+        aplicaciones=[]
+    )
+
+
+# ==========================================================
+# FUNCIÓN PRINCIPAL
 # ==========================================================
 
 def enrich_product(cleaned_data: dict):
 
     api_key = os.getenv("OPENAI_API_KEY")
-
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY no configurada")
 
     client = OpenAI(api_key=api_key)
 
-    # -----------------------------
-    # DATOS BASE
-    # -----------------------------
-    referencia = cleaned_data.get("referencia")
+    title = cleaned_data.get("title_raw")
     marca = cleaned_data.get("marca")
-    costo = cleaned_data.get("costo")
-    moneda = cleaned_data.get("moneda")
-    peso = cleaned_data.get("peso")
-    link = cleaned_data.get("url_origen")
-    title_raw = cleaned_data.get("title_raw")
-
-    bullets = cleaned_data.get("bullets") or []
-    technical_details = cleaned_data.get("technical_details") or {}
+    bullets = clean_list(cleaned_data.get("bullets") or [])
+    tech = cleaned_data.get("technical_details") or {}
     description = cleaned_data.get("product_description") or ""
-    product_information = cleaned_data.get("product_information") or {}
-    aplus = cleaned_data.get("aplus_content") or ""
 
-    bullets_text = "\n".join(bullets)
-    tech_text = format_technical_details(technical_details)
-    product_info_text = format_technical_details(product_information)
+    prompt = f"""
+TITULO: {title}
+MARCA: {marca}
 
-    combined_text = " ".join([
-        bullets_text,
-        description,
-        tech_text,
-        product_info_text,
-        aplus
-    ])
+CARACTERISTICAS:
+{chr(10).join(bullets)}
 
-    detected_specs_text = "\n".join(
-        detect_technical_patterns(combined_text)
-    )
+DESCRIPCION:
+{description}
 
-    prompt = build_prompt(
-        title_raw,
-        marca,
-        bullets_text,
-        description,
-        tech_text,
-        product_info_text,
-        aplus,
-        detected_specs_text
-    )
+TABLA TECNICA:
+{tech}
+"""
+
+    ficha = None
 
     try:
-
-        print("\n🤖 LLAMANDO A IA...")
-
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Responde SOLO JSON válido"},
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1,
-            max_tokens=1200,
-            response_format={"type": "json_object"}  # 🔥 CLAVE
+            temperature=0.05,
+            response_format={"type": "json_object"}
         )
 
-        raw_content = response.choices[0].message.content
+        raw = response.choices[0].message.content
+        parsed = safe_parse_json(raw)
 
-        print("\n================ IA RESPONSE =================")
-        print(raw_content)
-        print("=============================================\n")
+        if not parsed:
+            raise Exception("JSON inválido")
 
-        content = clean_ai_output(raw_content)
-        structured = safe_parse_json(content)
+        ficha = FichaTecnica(**parsed)
 
-        if not structured:
-            raise Exception("No se pudo extraer JSON válido")
+        # Validación mínima
+        if not ficha.descripcion_general:
+            ficha.descripcion_general = title or "Producto industrial"
 
-        nombre = structured.get("nombre")
-
-        if nombre:
-            nombre = normalize_units(nombre).strip()[:100]
-
-        # 🔥 NUEVA DESCRIPCIÓN CONTROLADA
-        descripcion = build_description(structured)
-        descripcion = normalize_units(descripcion)
-        descripcion = process_description(descripcion)
+        if len(ficha.caracteristicas_tecnicas) > 8:
+            ficha.caracteristicas_tecnicas = ficha.caracteristicas_tecnicas[:8]
 
     except Exception as e:
+        print("Fallback IA:", e)
+        ficha = build_fallback(cleaned_data)
 
-        print("\n❌ ERROR IA COMPLETO:")
-        print(e)
+    descripcion = build_description(ficha)
+    descripcion = process_description(descripcion)
 
-        nombre = title_raw or referencia or "Producto"
+    cleaned_data["ai_data"] = ficha.model_dump()
+    cleaned_data["descripcion_larga"] = descripcion
 
-        descripcion = (
-            description
-            or bullets_text
-            or tech_text
-            or "Información técnica no disponible"
-        )
-
-        descripcion = process_description(descripcion)
-
-    # ======================================================
-    # MANTENEMOS COMPATIBILIDAD (IMPORTANTE)
-    # ======================================================
-
-    via_fields = {
-        "21": referencia,
-        "24": marca,
-        "54": {
-            "costo": costo,
-            "moneda": moneda
-        },
-        "36": peso,
-        "66": link,
-        "69": nombre,
-        "72": descripcion
-    }
-
-    metadata = cleaned_data.get("metadata", {})
-    metadata["ai_enrichment"] = True
-
-    return {
-        "via_fields": via_fields,
-        "metadata": metadata
-    }
+    return cleaned_data
