@@ -47,6 +47,20 @@ class FichaTecnica(BaseModel):
 
 
 # ==========================================================
+# VALORES VACÍOS / SIN DATOS
+# ==========================================================
+
+NO_DATA_VALUES = {
+    "no data", "n/a", "not available", "none", "no disponible",
+    "not specified", "no aplica", "-", "—", "na", "null", "unknown",
+    "no information", "sin datos", "sin información"
+}
+
+def is_no_data(value: str) -> bool:
+    return value.strip().lower() in NO_DATA_VALUES
+
+
+# ==========================================================
 # TÍTULO INTELIGENTE
 # ==========================================================
 
@@ -66,18 +80,22 @@ def build_short_title(title_raw: str, marca: str):
 
 
 # ==========================================================
-# LIMPIEZA DE SPECS
+# LIMPIEZA DE SPECS (filtra "no data" y deduplica por clave)
 # ==========================================================
 
 def clean_technical_specs(tech: dict) -> List[str]:
     specs = []
-    seen = set()
+    seen_keys = set()
+    seen_specs = set()
 
     for k, v in tech.items():
         key = str(k).strip()
         value = str(v).strip()
 
         if not value or len(value) < 2:
+            continue
+
+        if is_no_data(value):
             continue
 
         key_lower = key.lower()
@@ -93,10 +111,14 @@ def clean_technical_specs(tech: dict) -> List[str]:
         ]):
             continue
 
+        if key_lower in seen_keys:
+            continue
+        seen_keys.add(key_lower)
+
         spec = f"{key}: {value}"
 
-        if spec.lower() not in seen:
-            seen.add(spec.lower())
+        if spec.lower() not in seen_specs:
+            seen_specs.add(spec.lower())
             specs.append(spec)
 
     return specs
@@ -118,51 +140,43 @@ def build_description(ficha: FichaTecnica) -> str:
 
     sections = []
 
-    # DESCRIPCIÓN GENERAL
     if ficha.descripcion_general:
         sections.append(
             "DESCRIPCIÓN GENERAL\n" +
             clean_text(ficha.descripcion_general[:400])
         )
 
-    # CARACTERÍSTICAS TÉCNICAS
     if ficha.caracteristicas_tecnicas:
         specs = format_list(ficha.caracteristicas_tecnicas)
         if specs.strip():
             sections.append("CARACTERÍSTICAS TÉCNICAS\n" + specs)
 
-    # ESPECIFICACIONES ELÉCTRICAS
     if ficha.especificaciones_electricas:
         elec = format_list(ficha.especificaciones_electricas)
         if elec.strip():
             sections.append("ESPECIFICACIONES ELÉCTRICAS\n" + elec)
 
-    # DIMENSIONES Y PESO
     if ficha.dimensiones:
         dims = format_list(ficha.dimensiones)
         if dims.strip():
             sections.append("DIMENSIONES Y PESO\n" + dims)
 
-    # CERTIFICACIONES Y NORMAS
     if ficha.certificaciones:
         certs = format_list(ficha.certificaciones)
         if certs.strip():
             sections.append("CERTIFICACIONES Y NORMAS\n" + certs)
 
-    # CONTENIDO DEL PAQUETE
     if ficha.contenido_del_paquete:
         contenido = format_list(ficha.contenido_del_paquete)
         if contenido.strip():
             sections.append("CONTENIDO DEL PAQUETE\n" + contenido)
 
-    # VENTAJAS PRINCIPALES
     if ficha.ventajas:
         ventajas = list(dict.fromkeys(ficha.ventajas))
         v_text = format_list(ventajas[:6])
         if v_text.strip():
             sections.append("VENTAJAS PRINCIPALES\n" + v_text)
 
-    # APLICACIONES
     if ficha.aplicaciones:
         aplicaciones = list(dict.fromkeys(ficha.aplicaciones))
         a_text = format_list(aplicaciones[:6])
@@ -232,6 +246,8 @@ REGLAS OBLIGATORIAS:
 4. Cada ítem debe ser específico, concreto y de valor técnico real
 5. Si una sección no aplica al producto, devuelve lista vacía []
 6. Las características técnicas deben estar en formato "Parámetro: Valor con unidades"
+7. NO incluyas características cuyo valor sea "no data", "N/A", "no disponible", "-" o similar
+8. NO repitas la misma característica con distintas unidades (ej: "95%" y "95 por ciento" es lo mismo, incluye solo una)
 
 ESTRUCTURA DEL JSON:
 
@@ -244,7 +260,7 @@ ESTRUCTURA DEL JSON:
   - Lista de especificaciones técnicas clave del producto
   - Mínimo 5 ítems, máximo 15
   - Formato: "Parámetro: Valor" (ej: "Rango de medición: 0–600 V AC/DC")
-  - Incluir parámetros medibles y objetivos
+  - Incluir solo parámetros con valores reales y concretos
 
 "especificaciones_electricas"
   - Solo completar si el producto es eléctrico o electrónico
@@ -257,7 +273,7 @@ ESTRUCTURA DEL JSON:
   - Lista vacía [] si no aplica
 
 "certificaciones"
-  - Normas de seguridad y certificaciones (CE, UL, CSA, IEC, IP, NEMA, CAT, RoHS, etc.)
+  - Normas de seguridad y certificaciones (CE, UL, CSA, IEC, IP, NEMA, CAT, RoHS, NIST, etc.)
   - Solo incluir si se mencionan explícitamente en los datos del producto
   - Lista vacía [] si no aplica
 
@@ -274,7 +290,7 @@ ESTRUCTURA DEL JSON:
 "aplicaciones"
   - Sectores, industrias o casos de uso donde se aplica el producto
   - Mínimo 3 ítems, máximo 6
-  - Frases concisas (ej: "Medición de tensión en tableros eléctricos industriales")
+  - Frases concisas (ej: "Detección de gases en espacios confinados")
 
 DATOS DEL PRODUCTO:
 Título: {title}
@@ -334,7 +350,7 @@ def enrich_product(cleaned_data: dict):
         ficha = build_fallback_ficha(bullets, tech, description)
 
     # ======================================================
-    # INYECCIÓN CONTROLADA DE SPECS EXTRAÍDAS
+    # INYECCIÓN DE SPECS EXTRAÍDAS (deduplicada por clave)
     # ======================================================
 
     specs_final = clean_technical_specs(tech)
@@ -342,14 +358,23 @@ def enrich_product(cleaned_data: dict):
     if not specs_final and tech:
         specs_final = [f"{k}: {v}" for k, v in list(tech.items())[:5]]
 
+    seen_keys = set()
+    seen_specs = set()
     specs_unicas = []
-    seen = set()
 
     for spec in specs_final + ficha.caracteristicas_tecnicas:
-        clean = spec.strip().lower()
-        if clean not in seen:
-            seen.add(clean)
-            specs_unicas.append(spec)
+        spec = spec.strip()
+        key_part = spec.split(":")[0].strip().lower()
+        spec_lower = spec.lower()
+
+        if key_part in seen_keys:
+            continue
+        if spec_lower in seen_specs:
+            continue
+
+        seen_keys.add(key_part)
+        seen_specs.add(spec_lower)
+        specs_unicas.append(spec)
 
     ficha.caracteristicas_tecnicas = specs_unicas
 
@@ -375,4 +400,3 @@ def enrich_product(cleaned_data: dict):
         },
         "metadata": cleaned_data.get("metadata", {})
     }
- 
