@@ -9,8 +9,6 @@ from openai import OpenAI
 from pydantic import BaseModel, field_validator
 from typing import List
 
-from normalizer.spec_postprocessor import clean_technical_specs
-
 
 # ==========================================================
 # SCHEMA EXTENDIDO
